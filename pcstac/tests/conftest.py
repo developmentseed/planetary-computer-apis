@@ -1,40 +1,14 @@
 import asyncio
-import json
 import os
-import time
-from typing import Callable, Dict
 
 import asyncpg
 import pytest
-from fastapi import FastAPI
-from fastapi.responses import ORJSONResponse
-from httpx import AsyncClient
 from pypgstac import pypgstac
-from stac_fastapi.api.models import create_get_request_model, create_post_request_model
-from stac_fastapi.extensions.core import (
-    ContextExtension,
-    FieldsExtension,
-    FilterExtension,
-    QueryExtension,
-    SortExtension,
-    TokenPaginationExtension,
-)
-from stac_fastapi.pgstac.config import Settings
-from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
+from starlette.testclient import TestClient
 
-from pcstac.api import PCStacApi
-from pcstac.client import PCClient
-from pcstac.search import PCSearch
-
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-
-# Setting this environment variable to ensure links are properly constructed
-os.environ["TILER_HREF_ENV_VAR"] = "http://localhost:8080/stac/dqe"
-
-# Testing is set to false because creating/updating via the API is not desirable
-#  thus, we actually want to use the migrations and data loaded in via the setup
-#  script which builds PQE docker containers
-settings = Settings(testing=False)
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data-files", "naip")
+collections = os.path.join(DATA_DIR, "collections.json")
+items = os.path.join(DATA_DIR, "items.json")
 
 
 @pytest.fixture(scope="session")
@@ -43,75 +17,99 @@ def event_loop():
 
 
 @pytest.fixture(scope="session")
-async def pqe_pg():
-    print(f"Connecting to write database {settings.reader_connection_string}")
-    print("writer conn string", settings.reader_connection_string)
-    conn = await asyncpg.connect(dsn=settings.reader_connection_string)
-    val = await conn.fetchval("SELECT true;")
-    print(val)
-    await conn.close()
-    version = await pypgstac.run_migration(dsn=settings.reader_connection_string)
-    print(f"PGStac Migrated to {version}")
+async def app_client():
+    """Setup DB and application."""
+    print("Setting up test db")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("POSTGRES_DBNAME", "pgstactestdb")
 
-    yield settings.reader_connection_string
-    await conn.close()
+        # Setting this environment variable to ensure links are properly constructed
+        mp.setenv("TILER_HREF_ENV_VAR", "http://localhost:8080/stac/dqe")
 
+        from stac_fastapi.pgstac.config import Settings
+        from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 
-@pytest.fixture(scope="session")
-def api_client(pqe_pg):
-    print("creating client with settings", settings, settings.reader_connection_string)
-    extensions = [
-        QueryExtension(),
-        SortExtension(),
-        FilterExtension(),
-        FieldsExtension(),
-        TokenPaginationExtension(),
-        ContextExtension(),
-    ]
-    search_get_request_model = create_get_request_model(extensions)
-    search_post_request_model = create_post_request_model(
-        extensions, base_model=PCSearch
-    )
-    api = PCStacApi(
-        title="test title",
-        description="test description",
-        api_version="1.0.0",
-        settings=Settings(debug=True),
-        client=PCClient.create(
-            post_request_model=search_post_request_model,
-        ),
-        extensions=extensions,
-        app=FastAPI(default_response_class=ORJSONResponse),
-        search_get_request_model=search_get_request_model,
-        search_post_request_model=search_post_request_model,
-    )
+        from pcstac.main import app
 
-    return api
+        # Testing is set to false because creating/updating via the API is not desirable
+        #  thus, we actually want to use the migrations and data loaded in via the setup
+        #  script which builds PQE docker containers
+        settings = Settings(testing=False)
+        assert settings.postgres_dbname == "pgstactestdb"
 
+        # First connect to the default DB (which should be `postgres`)
+        defaut_dsn = settings.reader_connection_string.replace(
+            "/pgstactestdb", "/postgres"
+        )
+        print(f"Connecting to write database {defaut_dsn}")
+        print("writer conn string", defaut_dsn)
+        conn = await asyncpg.connect(dsn=defaut_dsn)
 
-@pytest.mark.asyncio
-@pytest.fixture(scope="session")
-async def app(api_client):
-    time.time()
-    app = api_client.app
-    await connect_to_db(app)
+        print("creating temporary `pgstactestdb` database...")
+        try:
+            await conn.execute("CREATE DATABASE pgstactestdb;")
+            await conn.execute(
+                "ALTER DATABASE pgstactestdb SET search_path to pgstac, public;"
+            )
+        except asyncpg.exceptions.DuplicateDatabaseError:
+            print("pgstactestdb already exists, cleaning it...")
+            await conn.execute("DROP DATABASE pgstactestdb;")
+            await conn.execute("CREATE DATABASE pgstactestdb;")
+            await conn.execute(
+                "ALTER DATABASE pgstactestdb SET search_path to pgstac, public;"
+            )
+        finally:
+            await conn.close()
 
-    yield app
+        try:
+            print("migrating...")
+            conn = await asyncpg.connect(dsn=settings.reader_connection_string)
+            val = await conn.fetchval("SELECT true")
+            assert val
+            await conn.close()
 
-    await close_db_connection(app)
+            version = await pypgstac.run_migration(
+                dsn=settings.reader_connection_string
+            )
+            print(f"PGStac Migrated to {version}")
 
+            print("Registering collection and items")
+            conn = await asyncpg.connect(dsn=settings.reader_connection_string)
+            await conn.copy_to_table(
+                "collections",
+                source=collections,
+                columns=["content"],
+                format="csv",
+                quote=chr(27),
+                delimiter=chr(31),
+            )
+            # Make sure we have our collection
+            val = await conn.fetchval("SELECT COUNT(*) FROM collections")
+            print(f"registered {val} collection")
+            assert val == 1
 
-@pytest.mark.asyncio
-@pytest.fixture(scope="session")
-async def app_client(app):
-    async with AsyncClient(app=app, base_url="http://test") as c:
-        yield c
+            await conn.copy_to_table(
+                "items_staging",
+                source=items,
+                columns=["content"],
+                format="csv",
+                quote=chr(27),
+                delimiter=chr(31),
+            )
+            # Make sure we have all our items
+            val = await conn.fetchval("SELECT COUNT(*) FROM items")
+            print(f"registered {val} items")
+            assert val == 12
 
+            await conn.close()
 
-@pytest.fixture
-def load_test_data() -> Callable[[str], Dict]:
-    def load_file(filename: str) -> Dict:
-        with open(os.path.join(DATA_DIR, filename)) as file:
-            return json.load(file)
+            await connect_to_db(app)
+            yield TestClient(app)
+            await close_db_connection(app)
 
-    return load_file
+        finally:
+            print()
+            print("Getting rid of test database")
+            conn = await asyncpg.connect(dsn=defaut_dsn)
+            await conn.execute("DROP DATABASE pgstactestdb;")
+            await conn.close()
