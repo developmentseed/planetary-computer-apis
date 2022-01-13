@@ -2,9 +2,9 @@ from typing import Any, Dict
 from urllib.parse import urljoin
 
 import pystac
+from pccommon.render import DefaultRenderConfig
 from stac_fastapi.types.stac import Collection, Item
 
-from pccommon.render import DefaultRenderConfig
 from pcstac.config import get_settings
 
 TILER_HREF = get_settings().tiler_href

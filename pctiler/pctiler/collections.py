@@ -5,8 +5,8 @@ from urllib.parse import urljoin
 import requests
 from cachetools import TTLCache, cached
 from fastapi.exceptions import HTTPException
-
 from pccommon.backoff import with_backoff
+
 from pctiler.config import get_settings
 from pctiler.errors import TilerError
 

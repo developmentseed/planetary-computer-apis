@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Type
 from urllib.parse import urljoin
 
 import attr
+from pccommon.render import COLLECTION_RENDER_CONFIG
 from stac_fastapi.pgstac.core import CoreCrudClient
 from stac_fastapi.types.errors import NotFoundError
 from stac_fastapi.types.stac import (
@@ -13,7 +14,6 @@ from stac_fastapi.types.stac import (
     LandingPage,
 )
 
-from pccommon.render import COLLECTION_RENDER_CONFIG
 from pcstac.cache import collections_endpoint_cache
 from pcstac.config import API_DESCRIPTION, API_LANDING_PAGE_ID, API_TITLE, get_settings
 from pcstac.search import PCSearch
