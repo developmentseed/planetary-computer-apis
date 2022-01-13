@@ -10,7 +10,7 @@ FROM python:3.8.7-buster
 ARG DEVOPS_PAT
 
 RUN apt-get update && \
-    apt-get install -y build-essential libgeos++-dev libproj-dev
+    apt-get install -y build-essential
 
 ENV CURL_CA_BUNDLE /etc/ssl/certs/ca-certificates.crt
 
@@ -18,13 +18,11 @@ RUN pip install --upgrade pip setuptools wheel
 
 WORKDIR /opt/src
 
-COPY .isort.cfg .isort.cfg
 COPY pctiler/gunicorn_conf.py gunicorn_conf.py
 
 COPY pctiler pctiler
 COPY pccommon pccommon
-RUN pip install ./pccommon ./pctiler["server"]
-RUN rm -rf pccommon pctiler
+RUN pip install -e ./pccommon -e ./pctiler["server"]
 
 # GDAL config
 ENV GDAL_CACHEMAX 200

@@ -1,5 +1,8 @@
 FROM pc-apis-stac
 
+COPY setup.cfg /opt/src/setup.cfg
 COPY requirements-dev.txt /opt/src/requirements-dev.txt
 
 RUN pip install -r /opt/src/requirements-dev.txt
+
+RUN pip install pypgstac==0.4.2

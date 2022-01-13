@@ -32,21 +32,23 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./pcstac:/opt/src/pcstac
+      - ./scripts:/opt/src/scripts
     depends_on:
       - database
     command: >
-      bash -c "pypgstac pgready && uvicorn pcstac.main:app --host 0.0.0.0 --port 8081 --reload --proxy-headers"
+      bash -c "./scripts/wait-for-it database:5432 && uvicorn pcstac.main:app --host 0.0.0.0 --port 8081 --reload --proxy-headers"
   tiler:
     image: pc-apis-tiler
-    platform: linux/amd64
+    # For Mac OS M1 user, you'll need to add `platform: linux/amd64`.
+    # see https://github.com/developmentseed/titiler/discussions/387#discussioncomment-1643110
+    # platform: linux/amd64
     build:
       context: .
       dockerfile: pctiler/Dockerfile
     ports:
       - "8082:8082"
     volumes:
-      - ./pctiler:/opt/src/pctiler
+      - ./scripts:/opt/src/scripts
     environment:
       - APP_ROOT_PATH=/data
       - APP_HOST=0.0.0.0
@@ -75,7 +77,8 @@ services:
       - APP_INSIGHTS_INSTRUMENTATION_KEY
     depends_on:
       - database
-    command: [ "uvicorn", "pctiler.main:app", "--host", "0.0.0.0", "--port", "8082", "--reload", "--proxy-headers" ]
+    command: >
+      bash -c "./scripts/wait-for-it database:5432 && uvicorn pctiler.main:app --host 0.0.0.0 --port 8082 --reload --proxy-headers"
   nginx:
     image: pc-apis-nginx
     container_name: pc-apis-nginx
@@ -94,18 +97,21 @@ services:
       - 8080:80
   database:
     container_name: pc-stac-db
-    image: pc-apis-stac-db
-    build:
-      context: ./pgstac
-      dockerfile: Dockerfile
+    image: ghcr.io/stac-utils/pgstac:v0.4.2
     environment:
       - POSTGRES_USER=username
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=postgis
+      - PGUSER=username
+      - PGPASSWORD=password
+      - PGHOST=localhost
+      - PGDATABASE=postgis
     ports:
       - "5432:5432"
+    command: postgres -N 500
     volumes:
       - pc-apis-pgdata:/var/lib/postgresql/data
+
 volumes:
   pc-apis-pgdata:
 networks:
