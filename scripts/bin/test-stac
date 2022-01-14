@@ -24,16 +24,19 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     mypy pcstac/pcstac
 
     echo "Running  mypy for common..."
-    mypy pccommon
+    mypy pccommon/pccommon
 
     echo "Running black for stac..."
     black --check pcstac/pcstac pcstac/tests
 
     echo "Running black for common..."
-    black --check pccommon
+    black --check pccommon/pccommon pccommon/tests
 
     echo "Running flake8 for stac..."
     flake8 pcstac/pcstac pcstac/tests
+
+    echo "Running flake8 for common..."
+    flake8 pccommon/pccommon pccommon/tests
 
     echo "Running unit tests for stac..."
     python -m pytest pcstac/tests

@@ -7,13 +7,11 @@ ENV CURL_CA_BUNDLE /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /opt/src
 
-COPY .isort.cfg .isort.cfg
 COPY pcstac/gunicorn_conf.py gunicorn_conf.py
 
 COPY pcstac pcstac
 COPY pccommon pccommon
-RUN pip install ./pccommon ./pcstac["server"]
-RUN rm -rf pcstac pccommon
+RUN pip install -e ./pccommon -e ./pcstac["server"]
 
 ENV APP_HOST=0.0.0.0
 ENV APP_PORT=81

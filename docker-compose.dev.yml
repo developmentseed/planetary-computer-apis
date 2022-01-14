@@ -14,7 +14,7 @@ services:
       - POSTGRES_HOST_WRITER=database
       - POSTGRES_PORT=5432
     volumes:
-      - .:/opt/src
+      - ./scripts:/opt/src/scripts
     command: >
       /bin/bash
     depends_on:
@@ -44,7 +44,7 @@ services:
       - WEB_CONCURRENCY=1
       - WORKERS_PER_CORE=1
     volumes:
-      - .:/opt/src
+      - ./scripts:/opt/src/scripts
     command: >
       /bin/bash
     depends_on:

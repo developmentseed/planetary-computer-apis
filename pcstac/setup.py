@@ -22,16 +22,13 @@ inst_reqs = [
     "fastapi==0.67.*",
     "pystac==1.*",
     "pccommon",  # Planetary Computer Commons
-
-    # TODO: remove. pypgstac is a `test/dev` dependency but
-    # the way CI is designed we have to install it by default
-    "pypgstac==0.4.0",
 ]
 
 extra_reqs = {
     "test": [
         "pytest",
         "pytest-asyncio",
+        "pypgstac==0.4.2",
     ],
     "dev": [
         "pytest",

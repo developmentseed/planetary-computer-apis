@@ -17,21 +17,9 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     # Build docker containers
     scripts/update
 
-    # Migrate the DB
-    echo "migrating..."
-    scripts/migrate
-
     # Bring up servers
     echo "Bringing up servers"
     scripts/server --detached
-
-    echo "Ingesting development data..."
-
-    docker-compose \
-        -f docker-compose.yml \
-        run --rm \
-        stac \
-        python /opt/src/pcstac/tests/loadtestdata.py
 
     echo "Done."
 

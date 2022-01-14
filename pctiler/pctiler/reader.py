@@ -9,6 +9,7 @@ from cachetools.keys import hashkey
 from cogeo_mosaic.errors import NoAssetFoundError
 from fastapi import HTTPException
 from geojson_pydantic import Point, Polygon
+from pccommon.render import COLLECTION_RENDER_CONFIG, BlobCDN
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 from rio_tiler.errors import InvalidAssetName, MissingAssets, TileOutsideBounds
 from rio_tiler.io.base import BaseReader, MultiBaseReader
@@ -19,7 +20,6 @@ from rio_tiler.mosaic import mosaic_reader
 from titiler.pgstac import mosaic as pgstac_mosaic
 from titiler.pgstac.settings import CacheSettings
 
-from pccommon.render import COLLECTION_RENDER_CONFIG, BlobCDN
 from pctiler.reader_cog import CustomCOGReader  # type:ignore
 
 cache_config = CacheSettings()
