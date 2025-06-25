@@ -1,7 +1,5 @@
 import os
 
-from opencensus.trace.attributes_helper import COMMON_ATTRIBUTES
-
 CACHE_KEY_ITEM = "/item"
 
 DEFAULT_COLLECTION_CONFIG_TABLE_NAME = "collectionconfig"
@@ -30,10 +28,11 @@ QS_REQUEST_ENTITY = "request_entity"
 
 HTTP_429_TOO_MANY_REQUESTS = 429
 
-HTTP_PATH = COMMON_ATTRIBUTES["HTTP_PATH"]
-HTTP_URL = COMMON_ATTRIBUTES["HTTP_URL"]
-HTTP_STATUS_CODE = COMMON_ATTRIBUTES["HTTP_STATUS_CODE"]
-HTTP_METHOD = COMMON_ATTRIBUTES["HTTP_METHOD"]
+# TODO: switch to new stable http semantic conventions
+# https://opentelemetry.io/docs/specs/semconv/non-normative/http-migration/
+HTTP_PATH = "http.path"
+HTTP_URL = "http.url"
+HTTP_METHOD = "http.method"
 
 # This is the Azurite storage account key.
 # This is not a key for a real Storage Account and is publicly accessible

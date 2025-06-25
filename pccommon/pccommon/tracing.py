@@ -1,14 +1,14 @@
 import json
 import logging
 import re
-from typing import List, Optional, Tuple, Union, cast
+from typing import Any, List, Optional, Tuple, Union, cast
 
+from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
 from fastapi import Request
-from opencensus.ext.azure.trace_exporter import AzureExporter
-from opencensus.trace import execution_context
-from opencensus.trace.samplers import ProbabilitySampler
-from opencensus.trace.span import SpanKind
-from opencensus.trace.tracer import Tracer
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import Span, SpanKind, Tracer
 from starlette.datastructures import QueryParams
 
 from pccommon.config import get_apis_config
@@ -26,17 +26,23 @@ _config = get_apis_config()
 logger = logging.getLogger(__name__)
 
 
-exporter = (
-    AzureExporter(
-        connection_string=(
-            f"InstrumentationKey={_config.app_insights_instrumentation_key}"
-        )
-    )
-    if _config.app_insights_instrumentation_key
-    else None
-)
+tracer: Optional[Tracer]
 
-is_trace_enabled = exporter is not None
+if _config.app_insights_instrumentation_key:
+    tracer_provider = TracerProvider()
+    trace.set_tracer_provider(tracer_provider)
+
+    azure_exporter = AzureMonitorTraceExporter(
+        connection_string="InstrumentationKey="
+        + _config.app_insights_instrumentation_key
+    )
+
+    span_processor = BatchSpanProcessor(azure_exporter)
+    tracer_provider.add_span_processor(span_processor)
+
+    tracer = trace.get_tracer(__name__)
+else:
+    tracer = None
 
 
 async def trace_request(
@@ -47,57 +53,29 @@ async def trace_request(
     request_path = request_to_path(request).strip("/")
 
     if _should_trace_request(request):
-        tracer = Tracer(
-            exporter=exporter,
-            sampler=ProbabilitySampler(1.0),
-        )
-        with tracer.span("main") as span:
+        assert tracer
+        with tracer.start_as_current_span("main", kind=SpanKind.SERVER) as span:
             (collection_id, item_id) = await _collection_item_from_request(
                 service_name, request
             )
-            span.span_kind = SpanKind.SERVER
 
-            # Throwing the main span into request state lets us create child spans
-            # in downstream request processing, if there are specific things that
-            # are slow.
             request.state.parent_span = span
 
-            # Add request dimensions to the trace prior to calling the next middleware
-            tracer.add_attribute_to_current_span(
-                attribute_key="ref_id",
-                attribute_value=request.headers.get(X_AZURE_REF),
+            span.set_attribute("ref_id", request.headers.get(X_AZURE_REF) or "")
+            span.set_attribute(
+                "request_entity", request.headers.get(X_REQUEST_ENTITY) or ""
             )
-            tracer.add_attribute_to_current_span(
-                attribute_key="request_entity",
-                attribute_value=request.headers.get(X_REQUEST_ENTITY),
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key="request_ip",
-                attribute_value=get_request_ip(request),
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key=HTTP_METHOD, attribute_value=str(request.method)
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key=HTTP_URL, attribute_value=str(request.url)
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key=HTTP_PATH, attribute_value=request_path
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key="service", attribute_value=service_name
-            )
-            tracer.add_attribute_to_current_span(
-                attribute_key="in-server", attribute_value="true"
-            )
+            span.set_attribute("request_ip", get_request_ip(request) or "")
+            span.set_attribute(HTTP_METHOD, str(request.method))
+            span.set_attribute(HTTP_URL, str(request.url))
+            span.set_attribute(HTTP_PATH, request_path)
+            span.set_attribute("service", service_name)
+            span.set_attribute("in-server", "true")
+
             if collection_id is not None:
-                tracer.add_attribute_to_current_span(
-                    attribute_key="collection", attribute_value=collection_id
-                )
+                span.set_attribute("collection", collection_id)
                 if item_id is not None:
-                    tracer.add_attribute_to_current_span(
-                        attribute_key="item", attribute_value=item_id
-                    )
+                    span.set_attribute("item", item_id)
 
 
 collection_id_re = re.compile(
@@ -139,7 +117,7 @@ def _should_trace_request(request: Request) -> bool:
         - Not a health check endpoint
     """
     return (
-        is_trace_enabled
+        (tracer is not None)
         and request.method.lower() != "head"
         and not request.url.path.strip("/").endswith("_mgmt/ping")
     )
@@ -217,15 +195,17 @@ def add_stac_attributes_from_search(search_json: str, request: Request) -> None:
     collection_id, item_id = parse_collection_from_search(
         json.loads(search_json), request.method, request.query_params
     )
-    parent_span = getattr(request.state, "parent_span", None)
 
-    current_span = execution_context.get_current_span() or parent_span
+    current_span: Union[Optional[Any], Span]
+    current_span = trace.get_current_span()
+    if not current_span.is_recording():
+        current_span = getattr(request.state, "parent_span", None)
 
-    if current_span:
+    if current_span and current_span.is_recording():
         if collection_id is not None:
-            current_span.add_attribute("collection", collection_id)
+            current_span.set_attribute("collection", collection_id)
             if item_id is not None:
-                current_span.add_attribute("item", item_id)
+                current_span.set_attribute("item", item_id)
     else:
         logger.warning("No active or parent span available for adding attributes.")
 
