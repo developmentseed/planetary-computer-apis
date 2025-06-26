@@ -7,8 +7,11 @@ import sys
 from typing import Optional, Tuple, Union, cast
 from urllib.parse import urlparse
 
+from azure.monitor.opentelemetry.exporter import AzureMonitorLogExporter
 from fastapi import Request
-from opencensus.ext.azure.log_exporter import AzureLogHandler
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
 from pccommon.config import get_apis_config
 from pccommon.constants import (
@@ -104,15 +107,19 @@ def init_logging(service_name: str, app_root_path: str) -> None:
         if config.debug:
             logger.setLevel(logging.DEBUG)
 
-        # Azure log handler
         instrumentation_key = config.app_insights_instrumentation_key
         if instrumentation_key:
-            azure_handler = AzureLogHandler(
+            logger_provider = LoggerProvider()
+            set_logger_provider(logger_provider)
+
+            exporter = AzureMonitorLogExporter(
                 connection_string=f"InstrumentationKey={instrumentation_key}"
             )
-            azure_handler.addFilter(CustomDimensionsFilter())
+            logger_provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
 
-            logger.addHandler(azure_handler)
+            otel_handler = LoggingHandler(level=logging.NOTSET)
+            otel_handler.addFilter(CustomDimensionsFilter())
+            logger.addHandler(otel_handler)
         else:
             logger.info(f"Azure log handler not attached: {package} (missing key)")
 
